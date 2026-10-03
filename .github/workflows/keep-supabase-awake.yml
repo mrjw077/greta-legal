@@ -1,0 +1,45 @@
+# Не даёт Supabase уснуть.
+#
+# На бесплатном тарифе проект останавливается после недели без обращений, и тогда
+# приложение перестаёт работать целиком: ни входа, ни синхронизации, ни ИИ. Один раз
+# это уже случилось. Задача раз в двое суток дёргает проект, и счётчик простоя
+# обнуляется.
+#
+# Крутится на серверах GitHub, компьютер для этого включать не нужно.
+# Ключ ниже публичный: он и так вшит в приложение и виден в APK из Google Play.
+#
+# Когда перейдём на тариф Pro, этот файл можно удалить.
+
+name: Keep Supabase awake
+
+on:
+  schedule:
+    # 06:17 UTC каждые двое суток. Минуты не круглые намеренно:
+    # в начале часа очередь GitHub перегружена и запуск может задержаться.
+    - cron: "17 6 */2 * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase
+        env:
+          URL: https://bhrvtxjmnzzvzinwgdmi.supabase.co
+          KEY: sb_publishable_xsUmBao0GVAjJ8asVsP8Cw_Upeu_cJg
+        run: |
+          set -u
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+            -H "apikey: $KEY" "$URL/auth/v1/health")
+          echo "auth/v1/health -> $code"
+
+          curl -s -o /dev/null --max-time 30 \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
+            "$URL/rest/v1/" || true
+
+          # Падаем, только если проект недоступен — тогда GitHub пришлёт письмо
+          # об упавшем запуске, и это и будет сигнал, что что-то не так.
+          if [ "$code" != "200" ]; then
+            echo "Supabase не ответил 200 — проект мог уснуть или быть удалён"
+            exit 1
+          fi
